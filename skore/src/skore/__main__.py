@@ -2,7 +2,7 @@
 
 import sys
 
-from skore.cli.cli import cli
+from skore.cli.cli import start
 
 if __name__ == "__main__":
     import rich.traceback
@@ -10,4 +10,4 @@ if __name__ == "__main__":
     # Display error tracebacks with Rich
     rich.traceback.install(show_locals=True)
 
-    cli(sys.argv[1:])
+    start(sys.argv[1:])
