@@ -121,7 +121,7 @@ class CrossValidationReport(_BaseReport, DirNamesMixin):
     estimator_name_ : str
         The name of the estimator.
 
-    estimator_reports_ : list of EstimatorReport
+    reports_ : list of EstimatorReport
         The estimator reports for each split.
 
     See Also
@@ -173,7 +173,7 @@ class CrossValidationReport(_BaseReport, DirNamesMixin):
         self._split_indices = tuple(self._splitter.split(self._X, self._y))
         self.n_jobs = n_jobs
 
-        self.estimator_reports_: list[EstimatorReport] = self._fit_estimator_reports()
+        self.reports_: list[EstimatorReport] = self._fit_estimator_reports()
         self._initialize_state()
 
     def _initialize_state(self) -> None:
@@ -183,9 +183,7 @@ class CrossValidationReport(_BaseReport, DirNamesMixin):
             low=np.iinfo(np.int64).min, high=np.iinfo(np.int64).max
         )
         self._cache = Cache()
-        self._ml_task = _find_ml_task(
-            self._y, estimator=self.estimator_reports_[0]._estimator
-        )
+        self._ml_task = _find_ml_task(self._y, estimator=self.reports_[0]._estimator)
 
     def _fit_estimator_reports(self) -> list[EstimatorReport]:
         """Fit the estimator reports.
@@ -285,7 +283,7 @@ class CrossValidationReport(_BaseReport, DirNamesMixin):
         >>> report._cache
         {}
         """
-        for report in self.estimator_reports_:
+        for report in self.reports_:
             report.clear_cache()
 
         self._cache = Cache()
@@ -323,7 +321,7 @@ class CrossValidationReport(_BaseReport, DirNamesMixin):
             n_jobs = self.n_jobs
 
         for estimator_report in track(
-            self.estimator_reports_,
+            self.reports_,
             description="Cross-validation predictions for split",
         ):
             estimator_report.cache_predictions(
@@ -409,7 +407,7 @@ class CrossValidationReport(_BaseReport, DirNamesMixin):
                 X=X,
                 pos_label=pos_label,
             )
-            for report in self.estimator_reports_
+            for report in self.reports_
         ]
 
     def create_estimator_report(
@@ -490,7 +488,7 @@ class CrossValidationReport(_BaseReport, DirNamesMixin):
     def pos_label(self, value: PositiveLabel | None) -> None:
         self._pos_label = value
         self._initialize_state()
-        for estimator_report in self.estimator_reports_:
+        for estimator_report in self.reports_:
             estimator_report.pos_label = value
 
     ####################################################################################
