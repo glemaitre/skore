@@ -4,12 +4,13 @@ from typing import Any, Literal, cast
 
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from sklearn.base import BaseEstimator, is_classifier
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.pipeline import Pipeline
 
+from skore import configuration
 from skore._sklearn._plot.base import BOXPLOT_STYLE, DisplayMixin
+from skore._sklearn._plot.catplot import catplot, overlay_boxplot, set_figure_title
 from skore._sklearn._plot.inspection.utils import _decorate_matplotlib_axis
 from skore._sklearn.feature_names import _get_feature_names
 from skore._sklearn.types import Aggregate, ReportType
@@ -362,15 +363,20 @@ class CoefficientsDisplay(DisplayMixin):
             sorting_order=sorting_order,
         )
 
-    def _plot_matplotlib(
+    def _plot(  # type: ignore[override]
         self,
         *,
         include_intercept: bool = True,
-        subplot_by: Literal["estimator", "label", "output"] | None = None,
+        subplot_by: Literal["auto", "estimator", "label", "output"] | None = "auto",
         select_k: int | None = None,
         sorting_order: Literal["descending", "ascending", None] = None,
     ) -> None:
-        """Dispatch the plotting function for matplotlib backend."""
+        """Backend-agnostic plotting dispatch.
+
+        Overrides :meth:`PlotBackendMixin._plot` to share the plotting logic
+        across backends. The backend-specific rendering is handled by
+        :mod:`skore._sklearn._plot.catplot`.
+        """
         frame = self.frame(
             aggregate=None,
             include_intercept=include_intercept,
@@ -415,6 +421,10 @@ class CoefficientsDisplay(DisplayMixin):
             columns_to_groupby.append("output")
         return columns_to_groupby
 
+    ############################################################################
+    # Categorical plot rendering
+    ############################################################################
+
     def _categorical_plot(
         self,
         *,
@@ -422,12 +432,20 @@ class CoefficientsDisplay(DisplayMixin):
         report_type: ReportType,
         hue: str | None = None,
         col: str | None = None,
-        barplot_kwargs: dict[str, Any] | None = None,
-        boxplot_kwargs: dict[str, Any] | None = None,
-        stripplot_kwargs: dict[str, Any] | None = None,
+        barplot_kwargs: dict[str, Any],
+        boxplot_kwargs: dict[str, Any],
+        stripplot_kwargs: dict[str, Any],
     ):
+        """Create a categorical plot and decorate its axes.
+
+        Delegates plot creation to :func:`~skore._sklearn._plot.catplot.catplot`
+        and boxplot overlay to
+        :func:`~skore._sklearn._plot.catplot.overlay_boxplot`, which internally
+        dispatch to the configured backend. Axis decoration is handled by
+        :meth:`_decorate_axes`.
+        """
         if "estimator" in report_type:
-            self.facet_ = sns.catplot(
+            self.facet_ = catplot(
                 data=frame,
                 x="coefficient",
                 y="feature",
@@ -437,7 +455,7 @@ class CoefficientsDisplay(DisplayMixin):
                 **barplot_kwargs,
             )
         else:  # "cross-validation" in report_type
-            self.facet_ = sns.catplot(
+            self.facet_ = catplot(
                 data=frame,
                 x="coefficient",
                 y="feature",
@@ -446,36 +464,73 @@ class CoefficientsDisplay(DisplayMixin):
                 kind="strip",
                 dodge=True,
                 **stripplot_kwargs,
-            ).map_dataframe(
-                sns.boxplot,
+            )
+            overlay_boxplot(
+                self.facet_,
                 x="coefficient",
                 y="feature",
                 hue=hue,
-                palette="tab10" if hue is not None else None,
-                dodge=True,
-                **boxplot_kwargs,
+                boxplot_kwargs=boxplot_kwargs,
             )
-        add_background_features = hue is not None
 
-        self.figure_, self.ax_ = self.facet_.figure, self.facet_.axes.squeeze()
-        n_features = (
-            [frame["feature"].nunique()]
-            if col is None
-            else [
-                frame.query(f"{col} == '{col_value}'")["feature"].nunique()
-                for col_value in frame[col].unique()
-            ]
-        )
-        for ax, n_feature in zip(self.ax_.flatten(), n_features, strict=True):
-            _decorate_matplotlib_axis(
-                ax=ax,
-                add_background_features=add_background_features,
-                n_features=n_feature,
-                xlabel="Magnitude of coefficient",
-                ylabel="",
+        self.figure_ = self.facet_.figure
+        self._decorate_axes(frame=frame, hue=hue, col=col)
+
+    def _decorate_axes(
+        self,
+        *,
+        frame: pd.DataFrame,
+        hue: str | None,
+        col: str | None,
+    ) -> None:
+        """Apply axis decoration for the coefficients display."""
+        add_background_features = hue is not None
+        plot_backend = configuration.plot_backend
+
+        if plot_backend == "matplotlib":
+            self.ax_ = self.facet_.axes.squeeze()
+            n_features = (
+                [frame["feature"].nunique()]
+                if col is None
+                else [
+                    frame.query(f"{col} == '{col_value}'")["feature"].nunique()
+                    for col_value in frame[col].unique()
+                ]
             )
-        if len(self.ax_.flatten()) == 1:
-            self.ax_ = self.ax_.flatten()[0]
+            for ax, n_feature in zip(self.ax_.flatten(), n_features, strict=True):
+                _decorate_matplotlib_axis(
+                    ax=ax,
+                    add_background_features=add_background_features,
+                    n_features=n_feature,
+                    xlabel="Magnitude of coefficient",
+                    ylabel="",
+                )
+            if len(self.ax_.flatten()) == 1:
+                self.ax_ = self.ax_.flatten()[0]
+
+        elif plot_backend == "plotly":
+            from skore._sklearn._plot._plotly.catplot import _decorate_plotly_axis
+
+            col_values = self.facet_._col_values
+            for col_idx, col_val in enumerate(col_values):
+                if col_val is not None:
+                    facet_data = frame.query(f"{col} == '{col_val}'")
+                else:
+                    facet_data = frame
+                feature_names = facet_data["feature"].unique().tolist()
+                _decorate_plotly_axis(
+                    self.facet_.figure,
+                    col_idx=col_idx,
+                    n_cols=len(col_values),
+                    add_background_features=add_background_features,
+                    feature_names=feature_names,
+                    xlabel="Magnitude of coefficient",
+                    ylabel="",
+                )
+
+    ############################################################################
+    # Backend-agnostic plotting logic
+    ############################################################################
 
     def _plot_single_estimator(
         self,
@@ -509,19 +564,13 @@ class CoefficientsDisplay(DisplayMixin):
             subplots.
 
         barplot_kwargs : dict
-            Keyword arguments to be passed to :func:`seaborn.barplot` for
-            rendering the coefficients with an :class:`~skore.EstimatorReport` or
-            :class:`~skore.ComparisonReport` of :class:`~skore.EstimatorReport`.
+            Keyword arguments for the bar plot rendering.
 
         boxplot_kwargs : dict
-            Keyword arguments to be passed to :func:`seaborn.boxplot` for
-            rendering the coefficients with a :class:`~skore.CrossValidationReport` or
-            :class:`~skore.ComparisonReport` of :class:`~skore.CrossValidationReport`.
+            Keyword arguments for the box plot rendering.
 
         stripplot_kwargs : dict
-            Keyword arguments to be passed to :func:`seaborn.stripplot` for
-            rendering the coefficients with a :class:`~skore.CrossValidationReport` or
-            :class:`~skore.ComparisonReport` of :class:`~skore.CrossValidationReport`.
+            Keyword arguments for the strip plot rendering.
         """
         # {"label"} or {"output"} or {}
         columns_to_groupby = self._get_columns_to_groupby(frame=frame)
@@ -564,7 +613,7 @@ class CoefficientsDisplay(DisplayMixin):
         title = f"Coefficients of {estimator_name}"
         if subplot_by is not None:
             title += f" by {subplot_by}"
-        self.figure_.suptitle(title)
+        set_figure_title(self.figure_, title)
 
     @staticmethod
     def _has_same_features(*, frame: pd.DataFrame) -> bool:
@@ -605,19 +654,13 @@ class CoefficientsDisplay(DisplayMixin):
             reports at hand.
 
         barplot_kwargs : dict
-            Keyword arguments to be passed to :func:`seaborn.barplot` for
-            rendering the coefficients with an :class:`~skore.ComparisonReport` of
-            :class:`~skore.EstimatorReport`.
+            Keyword arguments for the bar plot rendering.
 
         boxplot_kwargs : dict
-            Keyword arguments to be passed to :func:`seaborn.boxplot` for
-            rendering the coefficients with a :class:`~skore.ComparisonReport` of
-            :class:`~skore.CrossValidationReport`.
+            Keyword arguments for the box plot rendering.
 
         stripplot_kwargs : dict
-            Keyword arguments to be passed to :func:`seaborn.stripplot` for
-            rendering the coefficients with a :class:`~skore.ComparisonReport` of
-            :class:`~skore.CrossValidationReport`.
+            Keyword arguments for the strip plot rendering.
         """
         # help mypy to understand the following variable types
         hue: str | None = None
@@ -698,7 +741,7 @@ class CoefficientsDisplay(DisplayMixin):
         title = "Coefficients"
         if subplot_by is not None:
             title += f" by {subplot_by}"
-        self.figure_.suptitle(title)
+        set_figure_title(self.figure_, title)
 
     @classmethod
     def _compute_data_for_display(

@@ -205,19 +205,31 @@ class StyleDisplayMixin:
 
         @wraps(plot_func)
         def wrapper(self, *args: Any, **kwargs: Any) -> Any:
-            # We need to manually handle setting the style of the parameters because
-            # `plt.style.context` has a side effect with the interactive mode.
-            # See https://github.com/matplotlib/matplotlib/issues/25041
-            original_params = {key: plt.rcParams[key] for key in DEFAULT_STYLE}
-            plt.rcParams.update(DEFAULT_STYLE)
-            try:
-                result = plot_func(self, *args, **kwargs)
-            finally:
-                if hasattr(self, "facet_"):
-                    self.facet_.tight_layout()
-                else:
-                    plt.tight_layout()
-                plt.rcParams.update(original_params)
+            plot_backend = configuration.plot_backend
+
+            if plot_backend == "matplotlib":
+                # We need to manually handle setting the style of the parameters
+                # because `plt.style.context` has a side effect with the
+                # interactive mode.
+                # See https://github.com/matplotlib/matplotlib/issues/25041
+                original_params = {key: plt.rcParams[key] for key in DEFAULT_STYLE}
+                plt.rcParams.update(DEFAULT_STYLE)
+                try:
+                    result = plot_func(self, *args, **kwargs)
+                finally:
+                    if hasattr(self, "facet_"):
+                        self.facet_.tight_layout()
+                    else:
+                        plt.tight_layout()
+                    plt.rcParams.update(original_params)
+                return result
+
+            # For non-matplotlib backends (e.g. plotly), skip the
+            # matplotlib rcParams handling and show the figure after
+            # plotting.
+            result = plot_func(self, *args, **kwargs)
+            if hasattr(self, "figure_"):
+                self.figure_.show()
             return result
 
         return wrapper
