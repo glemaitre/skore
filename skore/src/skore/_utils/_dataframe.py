@@ -26,7 +26,27 @@ def _ensure_string_column_names(df: nw.DataFrame[Any]) -> nw.DataFrame[Any]:
     return df.rename({col: str(col) for col in df.columns})
 
 
-def _normalize_X_as_dataframe(X: ArrayLike) -> UserDataFrame:
+def _eager_backend(obj: ArrayLike) -> nw.Implementation | None:
+    """Return the dataframe backend of ``obj``, or None when it is not tabular."""
+    if nw.dependencies.is_into_series(obj) or nw.dependencies.is_into_dataframe(obj):
+        return nw.from_native(obj, allow_series=True).implementation
+    return None
+
+
+def _frame_from_numpy(
+    array: np.ndarray, columns: list[str], backend: nw.Implementation | None
+) -> UserDataFrame:
+    if backend is not nw.Implementation.POLARS:
+        return pd.DataFrame(array, columns=columns)
+    return cast(
+        "UserDataFrame",
+        nw.from_numpy(array, schema=columns, backend=backend).to_native(),
+    )
+
+
+def _normalize_X_as_dataframe(
+    X: ArrayLike, *, backend: nw.Implementation | None = None
+) -> UserDataFrame:
     """Normalize feature data as a DataFrame with string column names."""
     if sp.issparse(X):
         raise NotImplementedError(
@@ -44,12 +64,14 @@ def _normalize_X_as_dataframe(X: ArrayLike) -> UserDataFrame:
         )
         X = cast(np.ndarray, X)
         columns = [f"Feature {i}" for i in range(X.shape[1])]
-        return pd.DataFrame(X, columns=columns)
+        return _frame_from_numpy(X, columns, backend)
 
     return _ensure_string_column_names(nw.from_native(X)).to_native()
 
 
-def _normalize_y_as_dataframe(y: ArrayLike) -> UserDataFrame:
+def _normalize_y_as_dataframe(
+    y: ArrayLike, *, backend: nw.Implementation | None = None
+) -> UserDataFrame:
     """Normalize target data as a DataFrame with predictable column names."""
     if sp.issparse(y):
         raise NotImplementedError(
@@ -87,7 +109,27 @@ def _normalize_y_as_dataframe(y: ArrayLike) -> UserDataFrame:
     y = np.asarray(y)
 
     columns = ["Target"] if y.ndim == 1 else [f"Target {i}" for i in range(y.shape[1])]
-    return pd.DataFrame(y, columns=columns)
+    if y.ndim == 1:
+        y = y.reshape(-1, 1)
+    return _frame_from_numpy(y, columns, backend)
+
+
+def _align_dataframe_backends(
+    X_frame: nw.DataFrame[Any], y_frame: nw.DataFrame[Any]
+) -> tuple[nw.DataFrame[Any], nw.DataFrame[Any]]:
+    """Bring ``X_frame`` and ``y_frame`` onto a common dataframe backend.
+
+    Prefer polars when the two sides differ: ``pandas -> polars`` does not
+    require pyarrow, while the reverse does.
+    """
+    if y_frame.implementation is X_frame.implementation:
+        return X_frame, y_frame
+    if X_frame.implementation is nw.Implementation.POLARS:
+        return X_frame, nw.from_native(y_frame.to_polars())
+    return (
+        nw.from_native(X_frame.to_polars()),
+        nw.from_native(y_frame.to_polars()),
+    )
 
 
 def _concat_vertical(

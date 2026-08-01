@@ -8,6 +8,8 @@ from skore._sklearn._base import _BaseAccessor
 from skore._sklearn._estimator.report import EstimatorReport
 from skore._sklearn._plot import TableReportDisplay
 from skore._utils._dataframe import (
+    _align_dataframe_backends,
+    _eager_backend,
     _normalize_X_as_dataframe,
     _normalize_y_as_dataframe,
 )
@@ -58,13 +60,14 @@ class _DataAccessor(_BaseAccessor[EstimatorReport], DirNamesMixin):
 
         if X is None:
             raise ValueError(err_msg.format(f"X_{dataset}", data_source))
-        X = _normalize_X_as_dataframe(X)
 
+        if with_y and y is None:
+            raise ValueError(err_msg.format(f"y_{dataset}", data_source))
+
+        backend = _eager_backend(X) or (_eager_backend(y) if with_y else None)
+        X = _normalize_X_as_dataframe(X, backend=backend)
         if with_y:
-            if y is None:
-                raise ValueError(err_msg.format(f"y_{dataset}", data_source))
-
-            y = _normalize_y_as_dataframe(y)
+            y = _normalize_y_as_dataframe(y, backend=backend)
 
         return X, y
 
@@ -190,6 +193,7 @@ class _DataAccessor(_BaseAccessor[EstimatorReport], DirNamesMixin):
                 )
 
         if with_y_task_aware:
+            X, y = _align_dataframe_backends(X, y)
             if data_source == "both":
                 row_index = "__row_index__"
                 df = (
