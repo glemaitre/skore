@@ -8,6 +8,8 @@ from skore._sklearn._base import _BaseAccessor
 from skore._sklearn._estimator.report import EstimatorReport
 from skore._sklearn._plot import TableReportDisplay
 from skore._utils._dataframe import (
+    _combine_X_y,
+    _eager_backend,
     _normalize_X_as_dataframe,
     _normalize_y_as_dataframe,
 )
@@ -58,13 +60,9 @@ class _DataAccessor(_BaseAccessor[EstimatorReport], DirNamesMixin):
 
         if X is None:
             raise ValueError(err_msg.format(f"X_{dataset}", data_source))
-        X = _normalize_X_as_dataframe(X)
 
-        if with_y:
-            if y is None:
-                raise ValueError(err_msg.format(f"y_{dataset}", data_source))
-
-            y = _normalize_y_as_dataframe(y)
+        if with_y and y is None:
+            raise ValueError(err_msg.format(f"y_{dataset}", data_source))
 
         return X, y
 
@@ -162,16 +160,14 @@ class _DataAccessor(_BaseAccessor[EstimatorReport], DirNamesMixin):
 
         with_y_task_aware = with_y and (self._parent.ml_task != "clustering")
 
-        if data_source == "train":
-            X, y = self._retrieve_data_as_frame("train", with_y_task_aware, data_source)
-            X = nw.from_native(X)
+        if data_source in ("train", "test"):
+            X, y = self._retrieve_data_as_frame(
+                data_source, with_y_task_aware, data_source
+            )
+            backend = _eager_backend(X) or _eager_backend(y)
+            X = nw.from_native(_normalize_X_as_dataframe(X, backend=backend))
             if with_y_task_aware:
-                y = nw.from_native(y)
-        elif data_source == "test":
-            X, y = self._retrieve_data_as_frame("test", with_y_task_aware, data_source)
-            X = nw.from_native(X)
-            if with_y_task_aware:
-                y = nw.from_native(y)
+                y = nw.from_native(_normalize_y_as_dataframe(y, backend=backend))
         else:
             X_train, y_train = self._retrieve_data_as_frame(
                 "train", with_y_task_aware, data_source
@@ -179,28 +175,28 @@ class _DataAccessor(_BaseAccessor[EstimatorReport], DirNamesMixin):
             X_test, y_test = self._retrieve_data_as_frame(
                 "test", with_y_task_aware, data_source
             )
+            backend = _eager_backend(X_train) or _eager_backend(y_train)
             X = nw.concat(
-                [nw.from_native(X_train), nw.from_native(X_test)],
+                [
+                    nw.from_native(_normalize_X_as_dataframe(X_train, backend=backend)),
+                    nw.from_native(_normalize_X_as_dataframe(X_test, backend=backend)),
+                ],
                 how="vertical",
             )
             if with_y_task_aware:
                 y = nw.concat(
-                    [nw.from_native(y_train), nw.from_native(y_test)],
+                    [
+                        nw.from_native(
+                            _normalize_y_as_dataframe(y_train, backend=backend)
+                        ),
+                        nw.from_native(
+                            _normalize_y_as_dataframe(y_test, backend=backend)
+                        ),
+                    ],
                     how="vertical",
                 )
 
-        if with_y_task_aware:
-            if data_source == "both":
-                row_index = "__row_index__"
-                df = (
-                    X.with_row_index(row_index)
-                    .join(y.with_row_index(row_index), on=row_index, how="inner")
-                    .drop(row_index)
-                )
-            else:
-                df = nw.concat([X, y], how="horizontal")
-        else:
-            df = X
+        df = _combine_X_y(X, y) if with_y_task_aware else X
 
         if subsample:
             if subsample_strategy == "head":

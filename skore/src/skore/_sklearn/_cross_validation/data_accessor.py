@@ -7,7 +7,7 @@ from skore._externals._pandas_accessors import DirNamesMixin
 from skore._sklearn._base import _BaseAccessor
 from skore._sklearn._cross_validation.report import CrossValidationReport
 from skore._sklearn._plot import TableReportDisplay
-from skore._utils._dataframe import _normalize_X_as_dataframe, _normalize_y_as_dataframe
+from skore._utils._dataframe import _concat_X_y, _normalize_X_as_dataframe
 
 
 class _DataAccessor(_BaseAccessor[CrossValidationReport], DirNamesMixin):
@@ -42,13 +42,8 @@ class _DataAccessor(_BaseAccessor[CrossValidationReport], DirNamesMixin):
         X = self._parent.X
         y = self._parent.y
 
-        X = _normalize_X_as_dataframe(X)
-
-        if with_y:
-            if y is None:
-                raise ValueError("y is required when `with_y=True`.")
-
-            y = _normalize_y_as_dataframe(y)
+        if with_y and y is None:
+            raise ValueError("y is required when `with_y=True`.")
 
         return X, y
 
@@ -76,12 +71,9 @@ class _DataAccessor(_BaseAccessor[CrossValidationReport], DirNamesMixin):
 
         X, y = self._retrieve_data_as_frame(with_y)
         if with_y:
-            df = nw.concat(
-                [nw.from_native(X), nw.from_native(y)],
-                how="horizontal",
-            )
+            df = nw.from_native(_concat_X_y(X, y))
         else:
-            df = nw.from_native(X)
+            df = nw.from_native(_normalize_X_as_dataframe(X))
 
         if subsample:
             if subsample_strategy == "head":

@@ -83,6 +83,42 @@ def test_summarize_with_y(n_targets, target_column_names, x_container, y_contain
 @pytest.mark.parametrize(
     "x_container,y_container",
     [
+        ("array", "polars"),
+        ("polars", "array"),
+        ("pandas", "polars"),
+        ("polars", "pandas"),
+    ],
+)
+def test_summarize_mixed_dataframe_libraries(x_container, y_container):
+    """Check that X and y can come from different dataframe libraries."""
+    X, y = make_regression(n_samples=100, n_features=2, n_targets=2, random_state=42)
+    feature_columns = ["Feature 0", "Feature 1"]
+    target_columns = ["Target 0", "Target 1"]
+    X = convert_container(X, x_container, column_names=feature_columns)
+    y = convert_container(y, y_container, column_names=target_columns)
+    report = CrossValidationReport(LinearRegression(), X, y, splitter=2)
+
+    display = report.data.summarize()
+    assert list(display.summary["dataframe"].columns) == (
+        feature_columns + target_columns
+    )
+
+
+@pytest.mark.parametrize("container", ["pandas", "polars"])
+def test_summarize_target_column_name_clashing_with_feature(container):
+    """Check that a target sharing a feature name is renamed instead of crashing."""
+    X, y = make_regression(n_samples=100, n_features=2, random_state=42)
+    X = convert_container(X, container, column_names=["a", "b"])
+    y = convert_container(y.reshape(-1, 1), container, column_names=["a"])
+    report = CrossValidationReport(LinearRegression(), X, y, splitter=2)
+
+    display = report.data.summarize()
+    assert list(display.summary["dataframe"].columns) == ["a", "b", "a_target"]
+
+
+@pytest.mark.parametrize(
+    "x_container,y_container",
+    [
         ("array", "array"),
         ("pandas", "series"),
         ("polars", "polars_series"),
