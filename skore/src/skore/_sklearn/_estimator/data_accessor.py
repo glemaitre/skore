@@ -190,10 +190,7 @@ class _DataAccessor(_BaseAccessor[EstimatorReport], DirNamesMixin):
                     how="vertical",
                 )
 
-        if with_y_task_aware:
-            df = _concat_horizontal_by_position(X, y)
-        else:
-            df = X
+        df = _concat_horizontal_by_position(X, y) if with_y_task_aware else X
 
         if subsample:
             if subsample_strategy == "head":
