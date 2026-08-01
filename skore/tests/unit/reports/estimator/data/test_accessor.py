@@ -170,6 +170,31 @@ def test_summarize_numpy_array(
     )
 
 
+@pytest.mark.parametrize("data_source", ["train", "test", "both"])
+def test_summarize_aligns_rows_by_position(data_source):
+    """Check X and y are joined by row position, not pandas index labels."""
+    X = pd.DataFrame(
+        {"feat": [1.0, 2.0, 3.0, 4.0]},
+        index=[10, 20, 30, 40],
+    )
+    # Deliberately different index labels than X.
+    y = pd.Series([10.0, 20.0, 30.0, 40.0], name="Target", index=[0, 1, 2, 3])
+    X_train, X_test = X.iloc[:2], X.iloc[2:]
+    y_train, y_test = y.iloc[:2], y.iloc[2:]
+
+    report = EstimatorReport(
+        LinearRegression(),
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        y_test=y_test,
+    )
+
+    display = report.data.summarize(data_source=data_source)
+    dataframe = display.summary["dataframe"]
+    assert (dataframe["Target"] == dataframe["feat"] * 10).all()
+
+
 @pytest.mark.parametrize("subsample_strategy", ["head", "random"])
 @pytest.mark.filterwarnings(
     "ignore:X has feature names, but RandomForestClassifier was fitted without"

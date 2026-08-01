@@ -1,3 +1,4 @@
+import pandas as pd
 import pytest
 from sklearn.datasets import make_regression
 from sklearn.linear_model import LinearRegression
@@ -78,6 +79,16 @@ def test_summarize_with_y(n_targets, target_column_names, x_container, y_contain
     assert list(display.summary["dataframe"].columns) == (
         feature_columns + target_column_names
     )
+
+
+def test_summarize_aligns_rows_by_position():
+    """Check X and y are joined by row position, not pandas index labels."""
+    X = pd.DataFrame({"feat": [1.0, 2.0, 3.0, 4.0]}, index=[10, 20, 30, 40])
+    y = pd.Series([10.0, 20.0, 30.0, 40.0], name="Target", index=[0, 1, 2, 3])
+    report = CrossValidationReport(LinearRegression(), X, y, splitter=2)
+
+    dataframe = report.data.summarize().summary["dataframe"]
+    assert (dataframe["Target"] == dataframe["feat"] * 10).all()
 
 
 @pytest.mark.parametrize(
