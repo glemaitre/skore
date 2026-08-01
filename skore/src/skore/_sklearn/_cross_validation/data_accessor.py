@@ -7,7 +7,11 @@ from skore._externals._pandas_accessors import DirNamesMixin
 from skore._sklearn._base import _BaseAccessor
 from skore._sklearn._cross_validation.report import CrossValidationReport
 from skore._sklearn._plot import TableReportDisplay
-from skore._utils._dataframe import _normalize_X_as_dataframe, _normalize_y_as_dataframe
+from skore._utils._dataframe import (
+    _deduplicate_target_columns,
+    _normalize_X_as_dataframe,
+    _normalize_y_as_dataframe,
+)
 
 
 class _DataAccessor(_BaseAccessor[CrossValidationReport], DirNamesMixin):
@@ -76,10 +80,9 @@ class _DataAccessor(_BaseAccessor[CrossValidationReport], DirNamesMixin):
 
         X, y = self._retrieve_data_as_frame(with_y)
         if with_y:
-            df = nw.concat(
-                [nw.from_native(X), nw.from_native(y)],
-                how="horizontal",
-            )
+            X_frame = nw.from_native(X)
+            y_frame = _deduplicate_target_columns(nw.from_native(y), X_frame.columns)
+            df = nw.concat([X_frame, y_frame], how="horizontal")
         else:
             df = nw.from_native(X)
 

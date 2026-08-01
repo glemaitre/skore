@@ -90,6 +90,29 @@ def _normalize_y_as_dataframe(y: ArrayLike) -> UserDataFrame:
     return pd.DataFrame(y, columns=columns)
 
 
+def _deduplicate_target_columns(
+    y: nw.DataFrame[Any], taken: list[str]
+) -> nw.DataFrame[Any]:
+    """Rename target columns that clash with feature names.
+
+    The first clash for a name ``col`` becomes ``col_target``; further clashes
+    append a numeric suffix (``col_target_1``, ...).
+    """
+    renaming, seen = {}, list(taken)
+    for column in y.columns:
+        if column not in seen:
+            seen.append(column)
+            continue
+        candidate = f"{column}_target"
+        suffix = 1
+        while candidate in seen:
+            candidate = f"{column}_target_{suffix}"
+            suffix += 1
+        renaming[column] = candidate
+        seen.append(candidate)
+    return y.rename(renaming) if renaming else y
+
+
 def _concat_vertical(
     a: ArrayLike, b: ArrayLike
 ) -> UserDataFrame | UserSeries | np.ndarray:

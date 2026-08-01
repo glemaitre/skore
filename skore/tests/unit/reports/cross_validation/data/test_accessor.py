@@ -80,6 +80,18 @@ def test_summarize_with_y(n_targets, target_column_names, x_container, y_contain
     )
 
 
+@pytest.mark.parametrize("container", ["pandas", "polars"])
+def test_summarize_target_column_name_clashing_with_feature(container):
+    """Check that a target sharing a feature name is renamed instead of crashing."""
+    X, y = make_regression(n_samples=100, n_features=2, random_state=42)
+    X = convert_container(X, container, column_names=["a", "b"])
+    y = convert_container(y.reshape(-1, 1), container, column_names=["a"])
+    report = CrossValidationReport(LinearRegression(), X, y, splitter=2)
+
+    display = report.data.summarize()
+    assert list(display.summary["dataframe"].columns) == ["a", "b", "a_target"]
+
+
 @pytest.mark.parametrize(
     "x_container,y_container",
     [

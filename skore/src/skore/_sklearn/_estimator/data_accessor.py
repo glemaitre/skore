@@ -8,6 +8,7 @@ from skore._sklearn._base import _BaseAccessor
 from skore._sklearn._estimator.report import EstimatorReport
 from skore._sklearn._plot import TableReportDisplay
 from skore._utils._dataframe import (
+    _deduplicate_target_columns,
     _normalize_X_as_dataframe,
     _normalize_y_as_dataframe,
 )
@@ -190,6 +191,7 @@ class _DataAccessor(_BaseAccessor[EstimatorReport], DirNamesMixin):
                 )
 
         if with_y_task_aware:
+            y = _deduplicate_target_columns(y, X.columns)
             if data_source == "both":
                 row_index = "__row_index__"
                 df = (
