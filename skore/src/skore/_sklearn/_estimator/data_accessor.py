@@ -8,6 +8,7 @@ from skore._sklearn._base import _BaseAccessor
 from skore._sklearn._estimator.report import EstimatorReport
 from skore._sklearn._plot import TableReportDisplay
 from skore._utils._dataframe import (
+    _concat_horizontal_by_position,
     _normalize_X_as_dataframe,
     _normalize_y_as_dataframe,
 )
@@ -189,18 +190,7 @@ class _DataAccessor(_BaseAccessor[EstimatorReport], DirNamesMixin):
                     how="vertical",
                 )
 
-        if with_y_task_aware:
-            if data_source == "both":
-                row_index = "__row_index__"
-                df = (
-                    X.with_row_index(row_index)
-                    .join(y.with_row_index(row_index), on=row_index, how="inner")
-                    .drop(row_index)
-                )
-            else:
-                df = nw.concat([X, y], how="horizontal")
-        else:
-            df = X
+        df = _concat_horizontal_by_position(X, y) if with_y_task_aware else X
 
         if subsample:
             if subsample_strategy == "head":

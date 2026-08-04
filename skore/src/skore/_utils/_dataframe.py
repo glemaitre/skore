@@ -90,6 +90,21 @@ def _normalize_y_as_dataframe(y: ArrayLike) -> UserDataFrame:
     return pd.DataFrame(y, columns=columns)
 
 
+def _concat_horizontal_by_position(
+    X_frame: nw.DataFrame[Any], y_frame: nw.DataFrame[Any]
+) -> nw.DataFrame[Any]:
+    """Concatenate features and target horizontally, aligning rows by position.
+
+    pandas ``concat`` matches on index labels; copy ``X``'s index onto ``y`` so
+    train/test/both all use the same positional semantics.
+    """
+    if X_frame.implementation.is_pandas_like():
+        y_native = cast(pd.DataFrame, y_frame.to_native())
+        X_native = cast(pd.DataFrame, X_frame.to_native())
+        y_frame = nw.from_native(y_native.set_axis(X_native.index))
+    return nw.concat([X_frame, y_frame], how="horizontal")
+
+
 def _concat_vertical(
     a: ArrayLike, b: ArrayLike
 ) -> UserDataFrame | UserSeries | np.ndarray:
