@@ -4,6 +4,7 @@ import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+import narwhals as nw
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -185,6 +186,10 @@ class PermutationImportanceDisplay(DisplayMixin):
         if issparse(X_transformed):
             X_transformed = cast(spmatrix, X_transformed)
             X_transformed = np.asarray(X_transformed.todense())
+        elif nw.dependencies.is_polars_dataframe(X_transformed):
+            # sklearn drops Polars column names before checking them against
+            # feature_names_in_, which warns even when the names match.
+            X_transformed = nw.from_native(X_transformed).to_pandas()
 
         scores = permutation_importance(
             estimator=estimator,

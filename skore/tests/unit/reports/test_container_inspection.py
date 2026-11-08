@@ -1,6 +1,11 @@
+import warnings
+
+import numpy as np
+import pandas as pd
+import polars as pl
 import pytest
-from sklearn.datasets import make_regression
-from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.datasets import make_classification, make_regression
+from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge
 from skrub import tabular_pipeline
 
 from skore import CrossValidationReport, EstimatorReport, PermutationImportanceDisplay
@@ -20,7 +25,6 @@ from skore._externals.sklearn_compat import convert_container
     "report_cls",
     [EstimatorReport, CrossValidationReport],
 )
-@pytest.mark.filterwarnings("ignore:X does not have valid feature names:UserWarning")
 def test_permutation_importance_with_containers(report_cls, x_container, y_container):
     """Permutation importance accepts array, pandas, and polars X/y inputs."""
     X, y = make_regression(n_samples=100, n_features=5, random_state=42)
@@ -36,8 +40,39 @@ def test_permutation_importance_with_containers(report_cls, x_container, y_conta
     else:
         report = CrossValidationReport(estimator, X, y, splitter=2)
 
-    display = report.inspection.permutation_importance(seed=42, n_repeats=2)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        display = report.inspection.permutation_importance(seed=42, n_repeats=2)
     assert isinstance(display, PermutationImportanceDisplay)
+    assert not any(
+        "does not have valid feature names" in str(warning.message)
+        for warning in caught
+    )
+
+
+def test_polars_permutation_importance_matches_array():
+    """Polars keeps column names and the same importances as a NumPy array."""
+    X, y = make_classification(n_samples=60, n_features=5, random_state=0)
+    columns = [f"f{i}" for i in range(X.shape[1])]
+    X_polars = pl.from_pandas(pd.DataFrame(X, columns=columns))
+
+    def importances(features, target):
+        report = EstimatorReport(
+            LogisticRegression(),
+            X_train=features,
+            y_train=target,
+            X_test=features,
+            y_test=target,
+        )
+        return report.inspection.permutation_importance(seed=0, n_repeats=3).frame()
+
+    array_frame = importances(X, y)
+    polars_frame = importances(X_polars, pl.Series(y))
+    assert polars_frame["feature"].tolist() == columns
+    np.testing.assert_allclose(
+        polars_frame["value_mean"].to_numpy(),
+        array_frame["value_mean"].to_numpy(),
+    )
 
 
 @pytest.mark.parametrize(
