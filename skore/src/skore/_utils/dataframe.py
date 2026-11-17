@@ -7,6 +7,7 @@ import scipy.sparse as sp
 from numpy.typing import ArrayLike
 
 from skore._externals.sklearn_compat import check_array
+from skore._sklearn.feature_names import _fallback_feature_names
 
 if TYPE_CHECKING:
     import polars as pl
@@ -18,6 +19,25 @@ else:
     UserSeries: TypeAlias = pd.Series
 
 UserTarget: TypeAlias = UserSeries | UserDataFrame
+
+
+def _disambiguate_target_columns(
+    features: nw.DataFrame[Any], target: nw.DataFrame[Any]
+) -> nw.DataFrame[Any]:
+    """Rename target columns that already exist on the feature frame.
+
+    A horizontal concat or row-index join otherwise suffixes the target copy
+    with ``_right``.
+    """
+    used = set(features.columns)
+    mapping: dict[Any, str] = {}
+    for name in target.columns:
+        candidate = name
+        while candidate in used:
+            candidate = f"{candidate}__y"
+        mapping[name] = candidate
+        used.add(candidate)
+    return target.rename(mapping)
 
 
 def _ensure_string_column_names(df: nw.DataFrame[Any]) -> nw.DataFrame[Any]:
@@ -43,7 +63,7 @@ def _normalize_X_as_dataframe(X: ArrayLike) -> UserDataFrame:
             dtype=None,
         )
         X = cast(np.ndarray, X)
-        columns = [f"Feature {i}" for i in range(X.shape[1])]
+        columns = _fallback_feature_names(X.shape[1])
         return pd.DataFrame(X, columns=columns)
 
     return _ensure_string_column_names(nw.from_native(X)).to_native()
