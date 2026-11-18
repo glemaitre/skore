@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 import joblib
 import numpy as np
+import pandas as pd
 import pytest
 import skrub
 from sklearn.base import clone
@@ -21,6 +22,7 @@ from sklearn.utils.validation import check_is_fitted
 
 from skore import EstimatorReport, evaluate
 from skore._utils.repr.paginated_metrics import METRICS_HTML_PAGE_SIZE
+from skore._utils.skrub import SKRUB_X_KEY
 
 
 def test_estimator_not_fitted():
@@ -545,11 +547,11 @@ def test_report_get_data_and_y_true(data_source):
     data, y_result = report._get_data_and_y_true(data_source=data_source)
 
     if data_source == "train":
-        np.testing.assert_array_equal(data["_skrub_X"], X_train)
+        np.testing.assert_array_equal(data[SKRUB_X_KEY], X_train)
         np.testing.assert_array_equal(y_result, y_train)
     else:
         assert data_source == "test"
-        np.testing.assert_array_equal(data["_skrub_X"], X_test)
+        np.testing.assert_array_equal(data[SKRUB_X_KEY], X_test)
         np.testing.assert_array_equal(y_result, y_test)
 
 
@@ -670,6 +672,19 @@ def test_learner_report_root_node_not_an_estimator():
         data_op.skb.make_learner(), train_data=split["train"], test_data=split["test"]
     )
     report.metrics.summarize(metric="accuracy")
+
+
+def test_duplicate_pandas_columns_raise_before_fit():
+    """Duplicated pandas columns are named in a ValueError before any fit."""
+    X, y = make_classification(n_samples=40, n_features=4, random_state=0)
+    duplicated = pd.DataFrame(X, columns=["f0", "f0", "f1", "f2"])
+    with pytest.raises(ValueError, match=r"X_train has duplicated column names: 'f0'"):
+        evaluate(LogisticRegression(), duplicated, y, splitter=0.25)
+
+    clean = pd.DataFrame(X, columns=["f0", "f1", "f2", "f3"])
+    fitted = LogisticRegression().fit(clean, y)
+    with pytest.raises(ValueError, match=r"X_test has duplicated column names: 'f0'"):
+        EstimatorReport(fitted, X_test=duplicated, y_test=y)
 
 
 def test_no_data_error():

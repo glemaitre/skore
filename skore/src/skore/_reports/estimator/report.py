@@ -23,13 +23,21 @@ from skore._reports.base import _BaseReport
 from skore._sklearn.find_ml_task import _find_ml_task
 from skore._utils.cache import Cache
 from skore._utils.cache_key import make_cache_key
+from skore._utils.dataframe import _reject_duplicate_columns
 from skore._utils.measure_time import MeasureTime
 from skore._utils.repr.data import get_documentation_url
 from skore._utils.repr.html_repr import render_template
 from skore._utils.repr.markdown import markdown_data_section, report_markdown_context
 from skore._utils.repr.paginated_metrics import metrics_summary_html
 from skore._utils.repr.utils import repair_estimator_html_for_slotted_host
-from skore._utils.skrub import eval_X_y, is_skrub_learner, to_estimator, to_learner
+from skore._utils.skrub import (
+    SKRUB_X_KEY,
+    SKRUB_Y_KEY,
+    eval_X_y,
+    is_skrub_learner,
+    to_estimator,
+    to_learner,
+)
 
 if TYPE_CHECKING:
     from numpy.typing import ArrayLike
@@ -84,14 +92,16 @@ def _check_estimator_and_data(
                 "Provide X_train, y_train, X_test, y_test instead."
             )
         estimator = to_learner(estimator)
+        _reject_duplicate_columns(X_train, label="X_train")
+        _reject_duplicate_columns(X_test, label="X_test")
         if X_test is None or y_test is None:
             raise TypeError(
                 "Test data must be provided (unless estimator is a "
                 "SkrubLearner and test_data is provided instead)."
             )
-        test_data = {"_skrub_X": X_test, "_skrub_y": y_test}
+        test_data = {SKRUB_X_KEY: X_test, SKRUB_Y_KEY: y_test}
         train_data = (
-            None if X_train is None else {"_skrub_X": X_train, "_skrub_y": y_train}
+            None if X_train is None else {SKRUB_X_KEY: X_train, SKRUB_Y_KEY: y_train}
         )
     return initialized_with_data_op, estimator, train_data, test_data
 
@@ -541,7 +551,7 @@ class EstimatorReport(_BaseReport, DirNamesMixin):
         assert data is not None
 
         # sample data for the probing:
-        X = data["_skrub_X"]
+        X = data[SKRUB_X_KEY]
         n_samples = _num_samples(X)
         sample_size = 100
         if n_samples <= sample_size:
@@ -550,7 +560,7 @@ class EstimatorReport(_BaseReport, DirNamesMixin):
             rng = np.random.default_rng(0)
             indices = rng.choice(n_samples, size=sample_size, replace=False)
             X_sample = _safe_indexing(X, indices, axis=0)
-            sampled_data = data | {"_skrub_X": X_sample}
+            sampled_data = data | {SKRUB_X_KEY: X_sample}
 
         # probe:
         predictions = self.learner_.predict(sampled_data)
@@ -726,19 +736,19 @@ class EstimatorReport(_BaseReport, DirNamesMixin):
 
     @property
     def X_train(self) -> ArrayLike | None:
-        return (self._train_data or {}).get("_skrub_X")
+        return (self._train_data or {}).get(SKRUB_X_KEY)
 
     @property
     def y_train(self) -> ArrayLike | None:
-        return (self._train_data or {}).get("_skrub_y")
+        return (self._train_data or {}).get(SKRUB_Y_KEY)
 
     @property
     def X_test(self) -> ArrayLike:
-        return self._test_data["_skrub_X"]
+        return self._test_data[SKRUB_X_KEY]
 
     @property
     def y_test(self) -> ArrayLike:
-        return self._test_data["_skrub_y"]
+        return self._test_data[SKRUB_Y_KEY]
 
     @property
     def train_data(self) -> dict | None:

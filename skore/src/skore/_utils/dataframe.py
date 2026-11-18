@@ -20,6 +20,58 @@ else:
 UserTarget: TypeAlias = UserSeries | UserDataFrame
 
 
+def _reject_duplicate_columns(X: ArrayLike | None, *, label: str) -> None:
+    """Raise when a dataframe repeats a column name.
+
+    Read the names from the native object. Narwhals refuses to wrap a frame
+    with duplicate columns, and the skrub learner then reports that as
+    ``NotFittedError``.
+    """
+    columns = getattr(X, "columns", None)
+    if columns is None:
+        return
+    counts: dict[Any, int] = {}
+    for column in columns:
+        counts[column] = counts.get(column, 0) + 1
+    duplicates = [column for column, count in counts.items() if count > 1]
+    if duplicates:
+        rendered = ", ".join(repr(column) for column in duplicates)
+        raise ValueError(
+            f"{label} has duplicated column names: {rendered}. "
+            "Column names must be unique."
+        )
+
+
+def _align_frame_backend(
+    frame: nw.DataFrame[Any], like: nw.DataFrame[Any]
+) -> nw.DataFrame[Any]:
+    """Return ``frame`` on the same dataframe implementation as ``like``."""
+    if frame.implementation == like.implementation:
+        return frame
+    if like.implementation.is_polars():
+        return nw.from_native(frame.to_polars())
+    return nw.from_native(frame.to_pandas())
+
+
+def _disambiguate_target_columns(
+    features: nw.DataFrame[Any], target: nw.DataFrame[Any]
+) -> nw.DataFrame[Any]:
+    """Rename target columns that already exist on the feature frame.
+
+    A horizontal concat or row-index join otherwise suffixes the target copy
+    with ``_right``.
+    """
+    used = set(features.columns)
+    mapping: dict[Any, str] = {}
+    for name in target.columns:
+        candidate = name
+        while candidate in used:
+            candidate = f"{candidate}__y"
+        mapping[name] = candidate
+        used.add(candidate)
+    return target.rename(mapping)
+
+
 def _ensure_string_column_names(df: nw.DataFrame[Any]) -> nw.DataFrame[Any]:
     if all(isinstance(col, str) for col in df.columns):
         return df
